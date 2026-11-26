@@ -1,3 +1,4 @@
+import { NamespaceVisibilityMap, visibilityFromStored } from '@/utils/namespaceVisibility';
 import { db } from '../db';
 import { DataSourceTreeSchema, FilterInputSchema } from '../validation';
 
@@ -22,6 +23,28 @@ class DataSourceTreeService {
       data[item.datasourceId] = item.hiddenTreeNodeIds;
     }
     return data;
+  }
+
+  async getNamespaceVisibilityMap(): Promise<NamespaceVisibilityMap> {
+    const existData = await db.dataSourceTree.toArray();
+    const data: NamespaceVisibilityMap = {};
+    for (const item of existData) {
+      data[item.datasourceId] = visibilityFromStored(item);
+    }
+    return data;
+  }
+
+  async saveNamespaceVisibility(
+    datasourceId: number,
+    record: {
+      showAllNamespaces: boolean;
+      shownTreeNodeIds: string[];
+      hiddenTreeNodeIds: string[];
+      schemaVisibility: Record<string, { showAll: boolean; ids: string[] }>;
+    },
+  ) {
+    const data = DataSourceTreeSchema.parse({ datasourceId, ...record });
+    await db.dataSourceTree.put(data);
   }
 
   // Modify the hiddenTreeNodeIds of a datasourceId

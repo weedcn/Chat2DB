@@ -4,6 +4,12 @@ import { z } from 'zod';
 export const DataSourceTreeSchema = z.object({
   datasourceId: z.number(),
   hiddenTreeNodeIds: z.array(z.string()),
+  showAllNamespaces: z.boolean().optional(),
+  shownTreeNodeIds: z.array(z.string()).optional(),
+  schemaVisibility: z.record(z.string(), z.object({
+    showAll: z.boolean(),
+    ids: z.array(z.string()),
+  })).optional(),
 });
 
 // Schema used to validate input parameters

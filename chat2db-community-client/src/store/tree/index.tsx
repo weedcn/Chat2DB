@@ -27,7 +27,12 @@ import { DataSourceIdentityColorPatch, patchDataSourceIdentityTree } from './dat
 import { collectDataSourceNodes, pruneDataSourceRuntimeAvailability } from './dataSourceList';
 import { shouldReuseTreeNodeChildren } from './treeNodeLoadState';
 import { hydrateDataSourceAfterMutation } from './dataSourceMutationRefresh';
-import { applyHiddenTreeNodeChanges, HiddenTreeNodeStateCoordinator } from './hiddenTreeNodeState';
+import { HiddenTreeNodeStateCoordinator } from './hiddenTreeNodeState';
+import {
+  NamespaceVisibilityMap,
+  pruneHiddenNamespaceChildren,
+  StoredNamespaceVisibility,
+} from '@/utils/namespaceVisibility';
 import { LatestLoadCoordinator, loadNamespaceTree } from './loadNamespaceTree';
 import {
   appendExpandedTreeKey,
@@ -80,10 +85,8 @@ export interface TreeState {
   searchResultKeys: string[] | null;
   searchResult: TreeNodeData[] | null;
   userConfigTree: IUserConfigTree;
-  // Hidden node id
-  hiddenTreeNodeIds: {
-    [key: string]: string[];
-  } | null;
+  // Per data source: all namespaces, an allow-list, or a legacy deny-list.
+  namespaceVisibility: NamespaceVisibilityMap | null;
 }
 
 export const initTreeState = {
@@ -110,8 +113,7 @@ export const initTreeState = {
   searchResult: null,
   currentLoadingTreeNode: null,
   userConfigTree: initUserConfigTree,
-  // Hidden node id
-  hiddenTreeNodeIds: null,
+  namespaceVisibility: null,
 };
 
 export interface TreeAction {
@@ -163,13 +165,7 @@ export interface TreeAction {
   // Get the child nodes under a certain node. If the child node is undefined, request the child node.
   getChildrenByNodeId: (nodeId: string) => TreeNodeData[];
   initHiddenTreeNodeIds: (force?: boolean) => Promise<boolean>;
-  addOrDeleteShowTreeNodeIds: (
-    dataSourceId: number,
-    changedKeys?: {
-      add: (string | null | undefined)[];
-      delete: (string | null | undefined)[];
-    },
-  ) => void;
+  setNamespaceVisibility: (dataSourceId: number, record: StoredNamespaceVisibility) => void;
 }
 
 type RootTreeLoadResult =
@@ -183,7 +179,7 @@ const treeNodeLoadCoordinator = new LatestLoadCoordinator<React.Key, ILoadDataRe
   committed: false,
 }));
 const hiddenTreeNodeStateCoordinator = new HiddenTreeNodeStateCoordinator<
-  NonNullable<TreeState['hiddenTreeNodeIds']>
+  NonNullable<TreeState['namespaceVisibility']>
 >();
 const ROOT_TREE_REFRESH_KEY = 'root';
 let treeStoreLifecycleVersion = 0;
@@ -496,7 +492,7 @@ export const createTreeAction: StateCreator<TreeStore, [['zustand/devtools', nev
       set({ treeData: _treeData });
       if (get().searchBarValue && _treeData) {
         const visibleTreeData = filterTreeNodesForDisplay(_treeData, {
-          hiddenTreeNodeIds: get().hiddenTreeNodeIds,
+          namespaceVisibility: get().namespaceVisibility,
         });
         const { matchedNodes, matchedKeys, parentIdsWithMatches } = searchTreeNodes(
           visibleTreeData,
@@ -510,7 +506,7 @@ export const createTreeAction: StateCreator<TreeStore, [['zustand/devtools', nev
       set({ treeData });
       if (get().searchBarValue && treeData) {
         const visibleTreeData = filterTreeNodesForDisplay(treeData, {
-          hiddenTreeNodeIds: get().hiddenTreeNodeIds,
+          namespaceVisibility: get().namespaceVisibility,
         });
         const { matchedNodes, matchedKeys, parentIdsWithMatches } = searchTreeNodes(
           visibleTreeData,
@@ -814,17 +810,11 @@ export const createTreeAction: StateCreator<TreeStore, [['zustand/devtools', nev
     return curNode?.children || [];
   },
   initHiddenTreeNodeIds: (force = false) => hiddenTreeNodeStateCoordinator.initialize(
-    () => dataSourceTreeService.getTreeHiddenTreeNodeIds(),
-    (hiddenTreeNodeIds) => set({ hiddenTreeNodeIds }),
+    () => dataSourceTreeService.getNamespaceVisibilityMap(),
+    (namespaceVisibility) => set({ namespaceVisibility }),
     force,
   ),
-  addOrDeleteShowTreeNodeIds: (
-    dataSourceId: number,
-    changedKeys?: {
-      add: (string | null | undefined)[];
-      delete: (string | null | undefined)[];
-    },
-  ) => {
+  setNamespaceVisibility: (dataSourceId, record) => {
     const lifecycleVersion = treeStoreLifecycleVersion;
     const applyChanges = async () => {
       await get().initHiddenTreeNodeIds();
@@ -832,22 +822,23 @@ export const createTreeAction: StateCreator<TreeStore, [['zustand/devtools', nev
         if (lifecycleVersion !== treeStoreLifecycleVersion) {
           return;
         }
-        const hiddenTreeNodeIds = get().hiddenTreeNodeIds || {};
-        const nextIds = applyHiddenTreeNodeChanges(hiddenTreeNodeIds[dataSourceId] || [], changedKeys);
-        set({
-          hiddenTreeNodeIds: {
-            ...hiddenTreeNodeIds,
-            [dataSourceId]: nextIds,
-          },
-        });
-        await dataSourceTreeService.updateHiddenTreeNodeIds(dataSourceId, nextIds);
+        const namespaceVisibility = {
+          ...(get().namespaceVisibility || {}),
+          [dataSourceId]: record.visibility,
+        };
+        set({ namespaceVisibility });
+        const treeData = get().treeData;
+        if (treeData) {
+          pruneHiddenNamespaceChildren(treeData, dataSourceId, record.visibility);
+          get().setTreeData([...treeData]);
+        }
+        await dataSourceTreeService.saveNamespaceVisibility(dataSourceId, record);
       });
     };
 
-    void applyChanges()
-      .catch((error) => {
-        console.error('Failed to persist hidden tree node settings', error);
-      });
+    void applyChanges().catch((error) => {
+      console.error('Failed to persist shown namespace settings', error);
+    });
   },
 });
 

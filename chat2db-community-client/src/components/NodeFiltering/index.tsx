@@ -83,7 +83,7 @@ const NodeFiltering = (props: IProps) => {
 
   const onChangeSelectAll = (e) => {
     if (e.target.checked) {
-      const newCheckedKeys = treeData.map((item) => item.key || '');
+      const newCheckedKeys = data.map((item) => item.key || '');
       setCheckedKeys(newCheckedKeys);
       const _changeSelect = newCheckedKeys.map((key) => parseChat2dbSpecificSymbolIdentifier(key)?.value);
       // Calculate newly added keys.

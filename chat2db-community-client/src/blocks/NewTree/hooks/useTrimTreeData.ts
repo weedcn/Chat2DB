@@ -10,10 +10,10 @@ export default function useTrimTreeData(props?: {
   excludeNodes?: string[];
 }): TreeNodeData[] | null {
   const { leafNodes, hiddenNoPermission, excludeNodes } = props || {};
-  const { treeData, searchResult, hiddenTreeNodeIds, userConfigTree } = useTreeStore((state) => ({
+  const { treeData, searchResult, namespaceVisibility, userConfigTree } = useTreeStore((state) => ({
     treeData: state.treeData,
     searchResult: state.searchResult,
-    hiddenTreeNodeIds: state.hiddenTreeNodeIds,
+    namespaceVisibility: state.namespaceVisibility,
     userConfigTree: state.userConfigTree,
   }));
 
@@ -27,7 +27,7 @@ export default function useTrimTreeData(props?: {
     }
 
     const filteredDatabaseAndSchema = filterTreeNodesForDisplay(_treeData, {
-      hiddenTreeNodeIds,
+      namespaceVisibility,
       hiddenNoPermission,
       excludeNodes,
       leafNodes,
@@ -37,7 +37,7 @@ export default function useTrimTreeData(props?: {
   }, [
     searchResult,
     treeData,
-    hiddenTreeNodeIds,
+    namespaceVisibility,
     hiddenNoPermission,
     excludeNodes,
     leafNodes,

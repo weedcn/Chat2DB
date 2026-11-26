@@ -1,8 +1,16 @@
 import type { TreeNodeData } from '@/typings';
 import { TreeNodeType } from '../constants/tree';
+import {
+  isNamespaceNodeShown,
+  isNamespaceTreeNode,
+  visibilityForDataSource,
+  type NamespaceVisibility,
+  type NamespaceVisibilityMap,
+} from './namespaceVisibility';
 
 export interface FilterTreeNodesOptions {
   hiddenTreeNodeIds?: Record<string, string[]> | null;
+  namespaceVisibility?: NamespaceVisibilityMap | null;
   hiddenNoPermission?: boolean;
   excludeNodes?: string[];
   leafNodes?: string[];
@@ -11,10 +19,11 @@ export interface FilterTreeNodesOptions {
 export function filterTreeNodesForDisplay(
   treeData: TreeNodeData[],
   options: FilterTreeNodesOptions = {},
-  inheritedHiddenIds?: string[] | null,
+  inheritedVisibility?: NamespaceVisibility | null,
 ): TreeNodeData[] {
   const {
     hiddenTreeNodeIds,
+    namespaceVisibility,
     hiddenNoPermission,
     excludeNodes,
     leafNodes,
@@ -23,10 +32,11 @@ export function filterTreeNodesForDisplay(
   return treeData
     .map((node) => {
       const newNode = { ...node };
-      const dataSourceHiddenIds = newNode.extraParams?.dataSourceId != null
-        ? hiddenTreeNodeIds?.[newNode.extraParams.dataSourceId]
-        : null;
-      const hiddenIds = inheritedHiddenIds || dataSourceHiddenIds;
+      const visibility = inheritedVisibility || visibilityForDataSource(
+        newNode.extraParams?.dataSourceId,
+        namespaceVisibility,
+        hiddenTreeNodeIds,
+      );
 
       if (excludeNodes?.includes(newNode.treeNodeType)) {
         return null;
@@ -40,10 +50,7 @@ export function filterTreeNodesForDisplay(
         return null;
       }
 
-      if (
-        (newNode.treeNodeType === TreeNodeType.DATABASE || newNode.treeNodeType === TreeNodeType.SCHEMA) &&
-        hiddenIds?.includes(String(newNode.key))
-      ) {
+      if (isNamespaceTreeNode(newNode) && !isNamespaceNodeShown(newNode, visibility)) {
         return null;
       }
 
@@ -51,7 +58,7 @@ export function filterTreeNodesForDisplay(
         newNode.isLeaf = true;
         newNode.children = undefined;
       } else if (newNode.children) {
-        newNode.children = filterTreeNodesForDisplay(newNode.children, options, hiddenIds);
+        newNode.children = filterTreeNodesForDisplay(newNode.children, options, visibility);
       }
 
       return newNode;

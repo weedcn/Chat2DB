@@ -8,11 +8,11 @@ import { filterTreeNodesForDisplay } from '@/utils/filterTreeNodes';
 import WorkspaceHeaderSearch from '../WorkspaceHeaderSearch';
 
 const WorkspaceTreeSearch = () => {
-  const { searchBarValue, setSearchBarValue, searchResultKeys, hiddenTreeNodeIds } = useTreeStore((state) => ({
+  const { searchBarValue, setSearchBarValue, searchResultKeys, namespaceVisibility } = useTreeStore((state) => ({
     searchBarValue: state.searchBarValue,
     setSearchBarValue: state.setSearchBarValue,
     searchResultKeys: state.searchResultKeys,
-    hiddenTreeNodeIds: state.hiddenTreeNodeIds,
+    namespaceVisibility: state.namespaceVisibility,
   }));
   const closeSearch = useCallback(() => {
     const treeStore = useTreeStore.getState();
@@ -30,7 +30,7 @@ const WorkspaceTreeSearch = () => {
         return;
       }
       const visibleTreeData = filterTreeNodesForDisplay(treeStore.treeData || [], {
-        hiddenTreeNodeIds: treeStore.hiddenTreeNodeIds,
+        namespaceVisibility: treeStore.namespaceVisibility,
       });
       const { matchedNodes, matchedKeys, parentIdsWithMatches } = searchTreeNodes(visibleTreeData, value);
       treeStore.setSearchResult(matchedNodes);
@@ -43,7 +43,7 @@ const WorkspaceTreeSearch = () => {
   useUpdateEffect(() => {
     debouncedSearch();
     return () => debouncedSearch.cancel();
-  }, [searchBarValue, hiddenTreeNodeIds, debouncedSearch]);
+  }, [searchBarValue, namespaceVisibility, debouncedSearch]);
 
   return (
     <WorkspaceHeaderSearch
