@@ -92,35 +92,66 @@ remove_existing_signatures() {
     fi
 }
 
+jpackage_supports_app_image_identity() {
+    "$1" --help 2>&1 | grep -q -- '--mac-app-image-sign-identity'
+}
+
+select_jpackage() {
+    local candidate
+    local home
+
+    if jpackage_supports_app_image_identity "$(command -v jpackage)"; then
+        command -v jpackage
+        return
+    fi
+    while IFS= read -r home; do
+        candidate="${home}/bin/jpackage"
+        if [ -x "${candidate}" ] && jpackage_supports_app_image_identity "${candidate}"; then
+            echo "${candidate}"
+            return
+        fi
+    done < <(/usr/libexec/java_home -V 2>&1 | sed -n 's/.* \(\/.*\/Contents\/Home\)$/\1/p')
+    command -v jpackage
+}
+
 package_application() {
-    jpackage --version
-    file "$(which jpackage)"
+    local jpackage_bin
+    jpackage_bin=$(select_jpackage)
+    echo "Using jpackage: ${jpackage_bin}"
+    "${jpackage_bin}" --version
+    file "${jpackage_bin}"
     security find-identity -v -p codesigning || true
 
     local signing_identity="${MAC_SIGNING_IDENTITY}"
+    local adhoc_sign=false
+    local post_adhoc_sign=false
     if [ -z "${signing_identity}" ]; then
         signing_identity=$(security find-identity -v -p codesigning | awk -F '"' '/Developer ID Application/ { print $2; exit }')
     fi
-    if [ -z "${signing_identity}" ]; then
-        echo "Error: no Developer ID Application signing identity found in keychain" >&2
-        security find-identity -v -p codesigning || true
-        exit 1
-    fi
-    if ! security find-identity -v -p codesigning | grep -F "${signing_identity}" >/dev/null; then
+    if [ -z "${signing_identity}" ] || [ "${signing_identity}" = "-" ]; then
+        echo "Warning: no Developer ID Application identity; the DMG will be ad-hoc signed for this Mac and is not notarized." >&2
+        adhoc_sign=true
+    elif ! security find-identity -v -p codesigning | grep -F "${signing_identity}" >/dev/null; then
         echo "Error: macOS signing identity not found: ${signing_identity}" >&2
         exit 1
     fi
 
     chat2db_jpackage_arguments "${NATIVE_VERSION}" "${OUTPUT_DIR}" "${MAC_RUNTIME_IMAGE}"
+    local package_type="dmg"
+    if [ "${adhoc_sign}" = true ]; then
+        package_type="app-image"
+        post_adhoc_sign=true
+    fi
     local args=(
         "${CHAT2DB_JPACKAGE_ARGS[@]}"
         "--verbose"
-        "--type" "dmg"
+        "--type" "${package_type}"
         "--file-associations" "${ASSOCIATIONS_FILE}"
-        "--mac-sign"
-        "--mac-signing-key-user-name" "${signing_identity}"
         "--resource-dir" "${RESOURCE_DIR}"
     )
+    if [ "${adhoc_sign}" != true ]; then
+        args+=("--mac-sign" "--mac-signing-key-user-name" "${signing_identity}")
+    fi
 
     if [ -n "${ICON_FILE}" ]; then
         args+=("--icon" "${ICON_FILE}")
@@ -163,8 +194,40 @@ package_application() {
         "--mac-app-category" "public.app-category.developer-tools"
     )
 
-    echo "Running: jpackage ${args[*]}"
-    jpackage "${args[@]}"
+    echo "Running: ${jpackage_bin} ${args[*]}"
+    "${jpackage_bin}" "${args[@]}"
+
+    if [ "${post_adhoc_sign}" = true ]; then
+        local app_dir
+        app_dir=$(find "${OUTPUT_DIR}" -maxdepth 1 -name '*.app' -print -quit)
+        if [ -z "${app_dir}" ]; then
+            echo "Error: packaged app not found for ad-hoc signing: ${OUTPUT_DIR}" >&2
+            exit 1
+        fi
+        sign_adhoc_app "${app_dir}"
+        local dmg_path="${OUTPUT_DIR}/Chat2DB-Community-adhoc.dmg"
+        rm -f "${dmg_path}"
+        hdiutil create -volname "${APP_NAME}" -srcfolder "${app_dir}" -ov -format UDZO "${dmg_path}"
+    fi
+}
+
+sign_adhoc_app() {
+    local app_dir="$1"
+    local target
+    echo "Ad-hoc signing ${app_dir}"
+    while IFS= read -r target; do
+        [ -n "${target}" ] || continue
+        if [ -d "${target}" ]; then
+            codesign --force --sign - "${target}"
+        elif file "${target}" | grep -q 'Mach-O'; then
+            codesign --force --sign - "${target}"
+        fi
+    done < <(
+        find "${app_dir}" \( -type d \( -name '*.framework' -o -name '*.app' -o -name '*.bundle' -o -name '*.xpc' \) -o -type f \) -print \
+            | awk '{ print length($0) "\t" $0 }' | sort -nr | cut -f2-
+    )
+    codesign --force --sign - "${app_dir}"
+    codesign --verify --deep --strict --verbose=2 "${app_dir}"
 }
 
 validate_packaged_dmg() {

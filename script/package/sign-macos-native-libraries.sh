@@ -9,6 +9,7 @@ fi
 
 INPUT_DIR="$1"
 SIGNING_IDENTITY="${MAC_SIGNING_IDENTITY:-}"
+ADHOC_SIGN=false
 SIGNED_COUNT=0
 MAX_SIGN_ATTEMPTS=3
 SIGN_RETRY_DELAY_SECONDS="${MAC_SIGN_RETRY_DELAY_SECONDS:-5}"
@@ -38,10 +39,11 @@ resolve_signing_identity() {
     SIGNING_IDENTITY=$(security find-identity -v -p codesigning \
       | awk -F '"' '/Developer ID Application/ { print $2; exit }')
   fi
-  if [ -z "${SIGNING_IDENTITY}" ]; then
-    echo "[error] no Developer ID Application signing identity found" >&2
-    security find-identity -v -p codesigning || true
-    exit 1
+  if [ -z "${SIGNING_IDENTITY}" ] || [ "${SIGNING_IDENTITY}" = "-" ]; then
+    echo "[warn] no Developer ID Application identity; using an ad-hoc signature for local packaging" >&2
+    SIGNING_IDENTITY="-"
+    ADHOC_SIGN=true
+    return 0
   fi
   if ! security find-identity -v -p codesigning \
     | grep -F "${SIGNING_IDENTITY}" >/dev/null; then
@@ -100,12 +102,15 @@ sign_and_verify_macho() {
 
   echo "[sign] ${relative_path}"
   for ((attempt = 1; attempt <= MAX_SIGN_ATTEMPTS; attempt++)); do
-    if codesign \
-      --force \
-      --sign "${SIGNING_IDENTITY}" \
-      --options runtime \
-      --timestamp \
-      "${native_file}" \
+    local sign_args=(
+      --force
+      --sign "${SIGNING_IDENTITY}"
+      --options runtime
+    )
+    if [ "${ADHOC_SIGN}" != true ]; then
+      sign_args+=(--timestamp)
+    fi
+    if codesign "${sign_args[@]}" "${native_file}" \
       && verify_macho_signature "${native_file}"; then
       return 0
     fi

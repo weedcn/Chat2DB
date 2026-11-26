@@ -215,4 +215,38 @@ if [ -s "${no_native_log}" ]; then
   fail "JAR without Mach-O payloads triggered a signing call"
 fi
 
+mkdir -p "${TEST_ROOT}/adhoc/source" "${TEST_ROOT}/adhoc/input"
+make_macho "${TEST_ROOT}/adhoc/source/libadhoc.dylib"
+(cd "${TEST_ROOT}/adhoc/source" && zip -q -r "${TEST_ROOT}/adhoc/input/fixture.jar" .)
+adhoc_log="${TEST_ROOT}/adhoc-codesign.log"
+: > "${adhoc_log}"
+cat > "${MOCK_BIN}/security" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+if [ "$*" = "find-identity -v -p codesigning" ]; then
+  echo '     0 valid identities found'
+  exit 0
+fi
+echo "unexpected security arguments: $*" >&2
+exit 1
+EOF
+chmod +x "${MOCK_BIN}/security"
+PATH="${MOCK_BIN}:${PATH}" \
+MAC_SIGNING_IDENTITY="" \
+MAC_SIGN_RETRY_DELAY_SECONDS=0 \
+MOCK_CODESIGN_LOG="${adhoc_log}" \
+  /bin/bash "${SIGNER}" "${TEST_ROOT}/adhoc/input"
+if [ "$(wc -l < "${adhoc_log}" | tr -d '[:space:]')" -ne 1 ]; then
+  fail "ad-hoc signing did not sign the single Mach-O payload"
+fi
+if ! grep -F -- '--sign -' "${adhoc_log}" >/dev/null; then
+  fail "ad-hoc signing did not use the ad-hoc identity"
+fi
+if grep -F -- '--timestamp' "${adhoc_log}" >/dev/null; then
+  fail "ad-hoc signing requested a timestamp"
+fi
+if ! grep -F -- '--options runtime' "${adhoc_log}" >/dev/null; then
+  fail "ad-hoc signing did not request the hardened runtime"
+fi
+
 echo "[check] recursive Mach-O selection, retry exhaustion, hardened signing, and executable modes passed"
