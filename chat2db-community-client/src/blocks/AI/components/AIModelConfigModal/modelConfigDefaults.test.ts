@@ -9,6 +9,8 @@ assert.equal(resolveProviderBaseUrl('MINIMAX', ''), DEFAULT_MINIMAX_BASE_URL);
 assert.equal(resolveProviderBaseUrl('MINIMAX', '   '), DEFAULT_MINIMAX_BASE_URL);
 assert.equal(resolveProviderBaseUrl('MINIMAX', 'https://api.minimax.chat/v1'), 'https://api.minimax.chat/v1');
 assert.equal(resolveProviderBaseUrl('OPENAI', ''), '');
+assert.equal(resolveProviderBaseUrl('OPENAI_RESPONSES', ''), 'http://127.0.0.1:15721');
+assert.equal(resolveBaseUrlOnProviderChange('OPENAI', 'http://127.0.0.1:15721'), '');
 
 assert.equal(resolveBaseUrlOnProviderChange('MINIMAX', ''), DEFAULT_MINIMAX_BASE_URL);
 assert.equal(resolveBaseUrlOnProviderChange('OPENAI', DEFAULT_MINIMAX_BASE_URL), '');

@@ -60,6 +60,9 @@ public class AiModelFactory {
         if (provider == AiProviderEnum.OPENAI) {
             return openAiClient(runtimeModel, retryTemplate);
         }
+        if (provider == AiProviderEnum.OPENAI_RESPONSES) {
+            return responsesClient(runtimeModel);
+        }
         if (provider == AiProviderEnum.MINIMAX) {
             if (StringUtils.containsIgnoreCase(runtimeModel.getBaseUrl(), "/anthropic")) {
                 return claudeClient(runtimeModel, retryTemplate);
@@ -111,6 +114,18 @@ public class AiModelFactory {
                 .observationRegistry(ObservationRegistry.NOOP)
                 .build();
 
+        return new AiChatClient(ChatClient.create(chatModel), () -> {
+        });
+    }
+
+    private AiChatClient responsesClient(AiRuntimeModel runtimeModel) {
+        String endpoint = OpenAiResponsesChatModel.endpoint(runtimeModel.getBaseUrl());
+        Map<String, Object> headerView = new LinkedHashMap<>();
+        headerView.put(HttpHeaders.AUTHORIZATION, maskSecret("Bearer " + runtimeModel.getApiKey()));
+        headerView.put(HttpHeaders.CONTENT_TYPE, "application/json");
+        headerView.put("chatgpt-account-id", StringUtils.isNotBlank(runtimeModel.getProjectId()) ? "set" : "");
+        logUpstreamTarget("openai-responses", endpoint, headerView);
+        ChatModel chatModel = new OpenAiResponsesChatModel(runtimeModel);
         return new AiChatClient(ChatClient.create(chatModel), () -> {
         });
     }

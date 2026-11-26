@@ -57,6 +57,8 @@ public class AiModelConfigServiceImpl implements IAiModelConfigService {
 
     private static final String DEFAULT_GEMINI_LOCATION = "us-central1";
     private static final String DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
+
+    private static final String DEFAULT_RESPONSES_BASE_URL = "http://127.0.0.1:15721";
     private static final String DEFAULT_MINIMAX_BASE_URL = "https://api.minimax.io/v1";
     private static final int TEST_ERROR_BODY_MAX_LENGTH = 2000;
     private static final String CONFIG_VALUE_PREFIX = "config:";
@@ -219,6 +221,9 @@ public class AiModelConfigServiceImpl implements IAiModelConfigService {
         if (provider == AiProviderEnum.OPENAI) {
             return testOpenAiCompatibleConfig(request, DEFAULT_OPENAI_BASE_URL);
         }
+        if (provider == AiProviderEnum.OPENAI_RESPONSES) {
+            return testOpenAiResponsesConfig(request);
+        }
         if (provider == AiProviderEnum.MINIMAX) {
             String baseUrl = trimToNull(request.getBaseUrl());
             if (StringUtils.isNotBlank(baseUrl) && StringUtils.containsIgnoreCase(baseUrl, "/anthropic")) {
@@ -300,7 +305,8 @@ public class AiModelConfigServiceImpl implements IAiModelConfigService {
      */
     private void normalizeRuntimeBaseUrl(AiRuntimeModel runtimeModel) {
         AiProviderEnum provider = AiProviderEnum.from(runtimeModel.getProvider());
-        if (provider != AiProviderEnum.OPENAI && provider != AiProviderEnum.CLAUDE && provider != AiProviderEnum.MINIMAX) {
+        if (provider != AiProviderEnum.OPENAI && provider != AiProviderEnum.OPENAI_RESPONSES
+                && provider != AiProviderEnum.CLAUDE && provider != AiProviderEnum.MINIMAX) {
             return;
         }
         runtimeModel.setBaseUrl(stripTrailingV1(runtimeModel.getBaseUrl()));
@@ -337,6 +343,10 @@ public class AiModelConfigServiceImpl implements IAiModelConfigService {
             runtimeModel.setBaseUrl(defaultValue(trimToNull(runtimeModel.getBaseUrl()), trimToNull(System.getenv("OPENAI_BASE_URL"))));
             return;
         }
+        if (provider == AiProviderEnum.OPENAI_RESPONSES) {
+            runtimeModel.setBaseUrl(defaultValue(trimToNull(runtimeModel.getBaseUrl()), DEFAULT_RESPONSES_BASE_URL));
+            return;
+        }
         if (provider == AiProviderEnum.MINIMAX) {
             runtimeModel.setApiKey(defaultValue(trimToNull(runtimeModel.getApiKey()), trimToNull(System.getenv("MINIMAX_API_KEY"))));
             runtimeModel.setBaseUrl(defaultValue(trimToNull(runtimeModel.getBaseUrl()), trimToNull(System.getenv("MINIMAX_BASE_URL"))));
@@ -366,7 +376,8 @@ public class AiModelConfigServiceImpl implements IAiModelConfigService {
         if (provider == null) {
             throw new IllegalArgumentException("Unsupported provider: " + runtimeModel.getProvider());
         }
-        if (provider == AiProviderEnum.OPENAI || provider == AiProviderEnum.CLAUDE) {
+        if (provider == AiProviderEnum.OPENAI || provider == AiProviderEnum.OPENAI_RESPONSES
+                || provider == AiProviderEnum.CLAUDE) {
             return;
         }
         if (provider == AiProviderEnum.GEMINI) {
@@ -501,6 +512,65 @@ public class AiModelConfigServiceImpl implements IAiModelConfigService {
         presets.put(AiProviderEnum.GEMINI, List.of("gemini-2.5-pro", "gemini-2.5-flash"));
         presets.put(AiProviderEnum.MINIMAX, List.of("MiniMax-M3", "MiniMax-M2.7"));
         return presets;
+    }
+
+    private ModelConfigTestResponse testOpenAiResponsesConfig(AiModelConfigSaveRequest request) {
+        String endpoint = appendPath(responsesOrigin(request.getBaseUrl()), "/v1/responses");
+        String apiKey = resolveTestApiKey(request);
+        if (StringUtils.isBlank(apiKey)) {
+            return ModelConfigTestResponse.failure(endpoint, null, "API Key is required for the connection test.");
+        }
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("model", request.getModel());
+        payload.put("instructions", "");
+        payload.put("input", List.of(Map.of("role", "user", "content", "Reply with the single word pong.")));
+        payload.put("stream", true);
+        payload.put("store", false);
+        payload.put("tools", List.of());
+
+        try {
+            SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+            requestFactory.setConnectTimeout(10_000);
+            requestFactory.setReadTimeout(30_000);
+            RestClient.RequestBodySpec spec = RestClient.builder()
+                    .requestFactory(requestFactory)
+                    .build()
+                    .post()
+                    .uri(URI.create(endpoint))
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .accept(MediaType.TEXT_EVENT_STREAM);
+            if (StringUtils.isNotBlank(request.getProjectId())) {
+                spec = spec.header("chatgpt-account-id", request.getProjectId().trim());
+            }
+            ResponseEntity<String> response = spec.body(payload).retrieve().toEntity(String.class);
+            HttpStatusCode statusCode = response.getStatusCode();
+            if (statusCode.is2xxSuccessful()) {
+                return ModelConfigTestResponse.success(endpoint);
+            }
+            return ModelConfigTestResponse.failure(endpoint, statusCode.value(),
+                    truncate(StringUtils.defaultIfBlank(response.getBody(), statusCode.toString())));
+        }
+        catch (RestClientResponseException exception) {
+            return ModelConfigTestResponse.failure(endpoint, exception.getStatusCode().value(),
+                    truncate(StringUtils.defaultIfBlank(exception.getResponseBodyAsString(), exception.getMessage())));
+        }
+        catch (Exception exception) {
+            return ModelConfigTestResponse.failure(endpoint, null, truncate(exception.getMessage()));
+        }
+    }
+
+    private String responsesOrigin(String baseUrl) {
+        String normalized = StringUtils.defaultIfBlank(trimToNull(baseUrl), DEFAULT_RESPONSES_BASE_URL);
+        normalized = StringUtils.removeEnd(normalized.trim(), "/");
+        for (String suffix : List.of("/v1/chat/completions", "/chat/completions", "/v1/responses", "/responses", "/v1")) {
+            if (StringUtils.endsWithIgnoreCase(normalized, suffix)) {
+                normalized = normalized.substring(0, normalized.length() - suffix.length());
+                normalized = StringUtils.removeEnd(normalized, "/");
+            }
+        }
+        return normalized;
     }
 
     private ModelConfigTestResponse testOpenAiCompatibleConfig(AiModelConfigSaveRequest request, String defaultBaseUrl) {

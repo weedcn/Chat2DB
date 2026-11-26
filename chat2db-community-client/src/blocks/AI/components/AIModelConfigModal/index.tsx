@@ -24,6 +24,7 @@ interface AIModelConfigModalProps {
 
 const providerOptions = [
   { label: 'OpenAI', value: 'OPENAI' },
+  { label: 'OpenAI Responses', value: 'OPENAI_RESPONSES' },
   { label: 'Claude', value: 'CLAUDE' },
   { label: 'Gemini', value: 'GEMINI' },
   { label: 'MiniMax', value: 'MINIMAX' },
@@ -309,6 +310,7 @@ export default function AIModelConfigModal({ open, onClose, onChanged }: AIModel
                 {
                   required:
                     (currentProvider === 'OPENAI' ||
+                      currentProvider === 'OPENAI_RESPONSES' ||
                       currentProvider === 'CLAUDE' ||
                       currentProvider === 'MINIMAX') &&
                     !currentConfig?.hasApiKey,
@@ -318,15 +320,36 @@ export default function AIModelConfigModal({ open, onClose, onChanged }: AIModel
             >
               <Input.Password
                 autoComplete="new-password"
-                placeholder={currentConfig?.apiKeyMasked || i18n('setting.modelConfig.placeholder.apiKey')}
+                placeholder={
+                  currentProvider === 'OPENAI_RESPONSES'
+                    ? 'Codex access_token'
+                    : currentConfig?.apiKeyMasked || i18n('setting.modelConfig.placeholder.apiKey')
+                }
                 visibilityToggle={false}
               />
             </Form.Item>
             <Form.Item name="baseUrl" label={i18n('setting.modelConfig.baseUrl')}>
-              <Input autoComplete="off" placeholder={i18n('setting.modelConfig.placeholder.baseUrl')} />
+              <Input
+                autoComplete="off"
+                placeholder={
+                  currentProvider === 'OPENAI_RESPONSES'
+                    ? 'http://127.0.0.1:15721'
+                    : i18n('setting.modelConfig.placeholder.baseUrl')
+                }
+              />
             </Form.Item>
-            <Form.Item name="projectId" label={i18n('setting.modelConfig.projectId')}>
-              <Input autoComplete="off" placeholder={i18n('setting.modelConfig.placeholder.projectId')} />
+            <Form.Item
+              name="projectId"
+              label={currentProvider === 'OPENAI_RESPONSES' ? 'ChatGPT Account ID' : i18n('setting.modelConfig.projectId')}
+            >
+              <Input
+                autoComplete="off"
+                placeholder={
+                  currentProvider === 'OPENAI_RESPONSES'
+                    ? 'Codex auth.json 里的 tokens.account_id'
+                    : i18n('setting.modelConfig.placeholder.projectId')
+                }
+              />
             </Form.Item>
             <Form.Item name="location" label={i18n('setting.modelConfig.location')}>
               <Input autoComplete="off" placeholder={i18n('setting.modelConfig.placeholder.location')} />

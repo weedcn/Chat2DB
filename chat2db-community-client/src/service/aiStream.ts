@@ -2,14 +2,14 @@ import createRequest from './base';
 import { IChatAttachment } from './aiAttachment';
 
 export interface IModelCatalogItem {
-  provider: 'OPENAI' | 'CLAUDE' | 'GEMINI' | 'MINIMAX';
+  provider: 'OPENAI' | 'OPENAI_RESPONSES' | 'CLAUDE' | 'GEMINI' | 'MINIMAX';
   models: string[];
 }
 
 export interface IModelOptionItem {
   value: string;
   label: string;
-  provider: 'OPENAI' | 'CLAUDE' | 'GEMINI' | 'MINIMAX';
+  provider: 'OPENAI' | 'OPENAI_RESPONSES' | 'CLAUDE' | 'GEMINI' | 'MINIMAX';
   model: string;
   modelConfigId?: string;
   customOption?: boolean;

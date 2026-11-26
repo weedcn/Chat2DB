@@ -4,6 +4,7 @@ import java.util.Locale;
 
 public enum AiProviderEnum {
     OPENAI,
+    OPENAI_RESPONSES,
     CLAUDE,
     GEMINI,
     MINIMAX;
