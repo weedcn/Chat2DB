@@ -116,7 +116,7 @@ download_jbr() {
   mkdir -p "${JBR_EXTRACT_DIR}"
 
   echo "[run] download JBR runtime: ${archive_name}"
-  curl --fail --location --retry 3 \
+  curl --fail --location --retry 5 --retry-all-errors \
     --output "${archive_path}" \
     "${JBR_BASE_URL}/${archive_name}"
   tar -xzf "${archive_path}" -C "${JBR_EXTRACT_DIR}" --strip-components=1
